@@ -1,0 +1,12 @@
+[package]
+name = "when"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "when"
+path = "src/main.rs"
+
+[dependencies]
+clap = { workspace = true }
+chrono = { workspace = true }

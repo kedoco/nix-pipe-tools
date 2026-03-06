@@ -5,6 +5,7 @@ members = [
     "crates/tap",
     "crates/prv",
     "crates/cel",
+    "crates/when",
 ]
 resolver = "2"
 

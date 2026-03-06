@@ -14,12 +14,14 @@ nix-pipe-tools/
     tap/              # pipeline stage debugger
     prv/              # file provenance tracker
     cel/              # tabular text column extractor
+    when/             # timestamp converter and time arithmetic
     <your-tool>/      # new tool goes here
   .claude/commands/
     maintain-memo.md
     maintain-tap.md
     maintain-prv.md
     maintain-cel.md
+    maintain-when.md
     <maintain-your-tool>.md  # create one for the new tool
 ```
 
