@@ -5,6 +5,42 @@ pub enum ExprResult {
     Duration(i64), // nanoseconds, signed
 }
 
+struct Segment {
+    op: Option<char>,
+    operand: String,
+}
+
+fn tokenize(input: &str) -> Vec<Segment> {
+    let tokens: Vec<&str> = input.split_whitespace().collect();
+    let mut segments = Vec::new();
+    let mut current_op: Option<char> = None;
+    let mut parts: Vec<&str> = Vec::new();
+
+    for token in tokens {
+        if token == "+" || token == "-" {
+            if !parts.is_empty() {
+                segments.push(Segment {
+                    op: current_op,
+                    operand: parts.join(" "),
+                });
+                parts.clear();
+            }
+            current_op = Some(token.as_bytes()[0] as char);
+        } else {
+            parts.push(token);
+        }
+    }
+
+    if !parts.is_empty() {
+        segments.push(Segment {
+            op: current_op,
+            operand: parts.join(" "),
+        });
+    }
+
+    segments
+}
+
 pub fn eval_expr(input: &str) -> Result<ExprResult, String> {
     let input = input.trim();
 
@@ -13,31 +49,52 @@ pub fn eval_expr(input: &str) -> Result<ExprResult, String> {
         return eval_expr(&format!("now {}", input));
     }
 
-    // Addition: timestamp + duration
-    if let Some(pos) = input.find(" + ") {
-        let left = &input[..pos];
-        let right = &input[pos + 3..];
-        let ts = parse::parse_timestamp(left)?;
-        let dur = parse::parse_duration_nanos(right)?;
-        return Ok(ExprResult::Time(Timestamp(ts.0 + dur)));
+    let segments = tokenize(input);
+    if segments.is_empty() {
+        return Err("empty expression".to_string());
     }
 
-    // Subtraction: timestamp - duration, or timestamp - timestamp
-    // Use rfind to handle timestamps with spaces (e.g. "2024-03-06 12:00:00 - now")
-    if let Some(pos) = input.rfind(" - ") {
-        let left = &input[..pos];
-        let right = &input[pos + 3..];
-        let ts = parse::parse_timestamp(left)?;
-        if let Ok(dur) = parse::parse_duration_nanos(right) {
-            return Ok(ExprResult::Time(Timestamp(ts.0 - dur)));
-        }
-        let ts2 = parse::parse_timestamp(right)?;
-        return Ok(ExprResult::Duration(ts.0 - ts2.0));
+    // First segment: must be a timestamp (no operator)
+    let mut result = ExprResult::Time(parse::parse_timestamp(&segments[0].operand)?);
+
+    for seg in &segments[1..] {
+        let op = seg.op.ok_or_else(|| "missing operator".to_string())?;
+        let dur = parse::parse_duration_nanos(&seg.operand).ok();
+        let ts = parse::parse_timestamp(&seg.operand).ok();
+
+        result = match (&result, op) {
+            (ExprResult::Time(t), '+') => {
+                let d = dur.ok_or_else(|| {
+                    format!("expected duration after '+': {}", seg.operand)
+                })?;
+                ExprResult::Time(Timestamp(t.0 + d))
+            }
+            (ExprResult::Time(t), '-') => {
+                if let Some(d) = dur {
+                    ExprResult::Time(Timestamp(t.0 - d))
+                } else if let Some(t2) = ts {
+                    ExprResult::Duration(t.0 - t2.0)
+                } else {
+                    return Err(format!("invalid operand: {}", seg.operand));
+                }
+            }
+            (ExprResult::Duration(d), '+') => {
+                let d2 = dur.ok_or_else(|| {
+                    format!("expected duration after '+': {}", seg.operand)
+                })?;
+                ExprResult::Duration(d + d2)
+            }
+            (ExprResult::Duration(d), '-') => {
+                let d2 = dur.ok_or_else(|| {
+                    format!("expected duration after '-': {}", seg.operand)
+                })?;
+                ExprResult::Duration(d - d2)
+            }
+            _ => return Err(format!("invalid operator: {}", op)),
+        };
     }
 
-    // Single timestamp
-    let ts = parse::parse_timestamp(input)?;
-    Ok(ExprResult::Time(ts))
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -100,6 +157,38 @@ mod tests {
     fn test_datetime_with_space_subtract() {
         match eval_expr("2024-03-06 12:00:00 - 1h").unwrap() {
             ExprResult::Time(ts) => assert_eq!(ts.epoch_secs(), 1709726400 - 3600),
+            ExprResult::Duration(_) => panic!("expected Time"),
+        }
+    }
+
+    #[test]
+    fn test_chained_arithmetic() {
+        // 2024-03-06 - 2024-03-05 = 1d, + 12h = 1d12h, - 30m = 1d11h30m
+        match eval_expr("2024-03-06 - 2024-03-05 + 12h - 30m").unwrap() {
+            ExprResult::Duration(d) => {
+                let secs = d / 1_000_000_000;
+                assert_eq!(secs, 86400 + 43200 - 1800);
+            }
+            ExprResult::Time(_) => panic!("expected Duration"),
+        }
+    }
+
+    #[test]
+    fn test_chained_time_add() {
+        match eval_expr("1709740800 + 1d + 2h + 30m").unwrap() {
+            ExprResult::Time(ts) => {
+                assert_eq!(ts.epoch_secs(), 1709740800 + 86400 + 7200 + 1800);
+            }
+            ExprResult::Duration(_) => panic!("expected Time"),
+        }
+    }
+
+    #[test]
+    fn test_chained_mixed_ops() {
+        match eval_expr("1709740800 + 2d - 1h").unwrap() {
+            ExprResult::Time(ts) => {
+                assert_eq!(ts.epoch_secs(), 1709740800 + 2 * 86400 - 3600);
+            }
             ExprResult::Duration(_) => panic!("expected Time"),
         }
     }
