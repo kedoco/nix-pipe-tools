@@ -7,7 +7,7 @@ mod format;
 mod parse;
 
 #[derive(Parser)]
-#[command(about = "Timestamp converter and time arithmetic")]
+#[command(version, about = "Timestamp converter and time arithmetic")]
 struct Cli {
     /// Timestamp or expression (e.g. "now", "1709740800", "now + 90d", "2024-12-25 - now")
     expr: Vec<String>,

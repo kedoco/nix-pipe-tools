@@ -2,7 +2,7 @@ use clap::Parser;
 use std::io::Read;
 
 #[derive(Parser)]
-#[command(name = "cel", about = "Extract columns from tabular text")]
+#[command(name = "cel", version, about = "Extract columns from tabular text")]
 struct Cli {
     /// Column selector: names, numbers, ranges (e.g. "name,status" or "1,3-5")
     columns: Option<String>,

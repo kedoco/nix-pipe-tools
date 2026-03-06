@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process;
 
 #[derive(Parser)]
-#[command(name = "memo", about = "Command memoization for Unix pipelines")]
+#[command(name = "memo", version, about = "Command memoization for Unix pipelines")]
 struct Cli {
     #[command(subcommand)]
     subcmd: Option<SubCmd>,
