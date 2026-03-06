@@ -16,3 +16,6 @@ nix = { workspace = true }
 chrono = { workspace = true }
 comfy-table = { workspace = true }
 crossbeam-channel = "0.5"
+
+[dev-dependencies]
+tempfile = "3"

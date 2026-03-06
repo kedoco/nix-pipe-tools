@@ -691,6 +691,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared",
+ "tempfile",
  "toml",
  "which",
 ]
@@ -907,6 +908,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared",
+ "tempfile",
 ]
 
 [[package]]
