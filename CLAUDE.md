@@ -1,6 +1,6 @@
 # Unix Pipe Tools
 
-Cargo workspace with four crates: `shared`, `memo`, `tap`, `prv`.
+Cargo workspace with five crates: `shared`, `memo`, `tap`, `prv`, `cel`.
 
 ## Build & Test
 
@@ -16,6 +16,7 @@ cargo clippy --workspace
 - **memo** (`crates/memo/`) — content-addressed command memoization
 - **tap** (`crates/tap/`) — pipeline stage debugger / named snapshot capture
 - **prv** (`crates/prv/`) — file provenance tracker via syscall tracing or shell hooks
+- **cel** (`crates/cel/`) — universal tabular text column extractor (auto-detects CSV, TSV, markdown, ASCII-aligned tables)
 
 All three tools follow Unix philosophy: each does one thing, they compose via pipes, text is the universal interface, silence is golden.
 
