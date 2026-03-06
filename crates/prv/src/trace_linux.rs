@@ -46,8 +46,8 @@ pub fn trace_command(
             Err(_) => continue,
         };
         if let Some((path, event_type)) = parse_strace_line(&line) {
-            if !config.should_ignore(&path) {
-                db.insert_file_event(cmd_id, &path, event_type, &event_ts)?;
+            if !config.should_ignore(path) {
+                db.insert_file_event(cmd_id, path, event_type, &event_ts)?;
             }
         }
     }
@@ -119,9 +119,6 @@ fn extract_last_quoted_string(line: &str) -> Option<&str> {
     }
     Some(&line[last_start?..last_end?])
 }
-
-/// Convenience type alias — not an actual error type in this module
-type AnyhowResult<T> = anyhow::Result<T>;
 
 // Re-export for use by main.rs on linux
 pub use trace_command as wrap_command;
