@@ -1,11 +1,11 @@
 # new tool
 
-You are creating a new Unix pipe tool in the `unix-pipe-tools` workspace. Follow the established patterns exactly.
+You are creating a new Unix pipe tool in the `nix-pipe-tools` workspace. Follow the established patterns exactly.
 
 ## Workspace structure
 
 ```
-unix-pipe-tools/
+nix-pipe-tools/
   Cargo.toml          # workspace root — members list, [workspace.dependencies]
   CLAUDE.md           # architecture overview — update when adding a tool
   crates/
@@ -15,12 +15,12 @@ unix-pipe-tools/
     prv/              # file provenance tracker
     cel/              # tabular text column extractor
     <your-tool>/      # new tool goes here
-  .claude/agents/
-    memo-maintainer.md
-    tap-maintainer.md
-    prv-maintainer.md
-    cel-maintainer.md
-    <your-tool>-maintainer.md  # create one for the new tool
+  .claude/commands/
+    maintain-memo.md
+    maintain-tap.md
+    maintain-prv.md
+    maintain-cel.md
+    <maintain-your-tool>.md  # create one for the new tool
 ```
 
 ## Step-by-step process
@@ -67,7 +67,7 @@ In root `Cargo.toml`:
 
 ### 5. Create maintainer skill
 
-Create `.claude/agents/<name>-maintainer.md` following the pattern of existing ones. Include:
+Create `.claude/commands/maintain-<name>.md` following the pattern of existing ones. Include:
 - What the tool does with usage examples
 - Crate location
 - Source files table with detailed descriptions of each file

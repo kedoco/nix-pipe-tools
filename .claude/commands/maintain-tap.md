@@ -19,7 +19,7 @@ tap clean --older-than 1d           # remove old sessions
 
 ## Crate location
 
-`crates/tap/` within the `unix-pipe-tools` workspace.
+`crates/tap/` within the `nix-pipe-tools` workspace.
 
 ## Source files
 

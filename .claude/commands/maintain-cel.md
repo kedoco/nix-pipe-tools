@@ -21,7 +21,7 @@ cel -o box < data.csv                          # CSV in, box-drawing table out
 
 ## Crate location
 
-`crates/cel/` within the `unix-pipe-tools` workspace.
+`crates/cel/` within the `nix-pipe-tools` workspace.
 
 ## Source files
 

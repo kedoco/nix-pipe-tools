@@ -20,7 +20,7 @@ memo show-key echo hello      # print cache key without running
 
 ## Crate location
 
-`crates/memo/` within the `unix-pipe-tools` workspace.
+`crates/memo/` within the `nix-pipe-tools` workspace.
 
 ## Source files
 

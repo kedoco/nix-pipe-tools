@@ -28,7 +28,7 @@ prv gc --older-than 90d         # clean old records
 
 ## Crate location
 
-`crates/prv/` within the `unix-pipe-tools` workspace.
+`crates/prv/` within the `nix-pipe-tools` workspace.
 
 ## Source files
 
