@@ -127,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "cel"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "regex",
@@ -572,7 +572,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "memo"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "fs2",
@@ -679,7 +679,7 @@ dependencies = [
 
 [[package]]
 name = "prv"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -860,7 +860,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "serde",
@@ -899,7 +899,7 @@ dependencies = [
 
 [[package]]
 name = "tap"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "clap",
@@ -1113,7 +1113,7 @@ dependencies = [
 
 [[package]]
 name = "when"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "clap",
