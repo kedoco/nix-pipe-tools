@@ -4,7 +4,7 @@ use prv::db::Database;
 use std::path::Path;
 
 #[derive(Parser)]
-#[command(name = "prv", version, about = "File provenance tracker")]
+#[command(name = "prv", version = shared::VERSION, about = "File provenance tracker")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

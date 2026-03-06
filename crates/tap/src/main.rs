@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use std::time::Instant;
 
 #[derive(Parser)]
-#[command(name = "tap", version, about = "Pipeline stage debugger")]
+#[command(name = "tap", version = shared::VERSION, about = "Pipeline stage debugger")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Cmd>,

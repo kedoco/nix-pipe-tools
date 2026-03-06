@@ -8,5 +8,6 @@ name = "when"
 path = "src/main.rs"
 
 [dependencies]
+shared = { workspace = true }
 clap = { workspace = true }
 chrono = { workspace = true }
