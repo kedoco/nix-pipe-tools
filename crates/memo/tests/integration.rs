@@ -186,10 +186,16 @@ fn bust_invalidates_cache() {
     // Use `script` to run memo in a pty so that stdin appears as a terminal.
     // This ensures the cache key matches between cmd_run and bust/show-key
     // (both compute keys with stdin_hash=None when stdin is a tty).
+    // macOS: script -q /dev/null sh -c "..."
+    // Linux: script -qc "..." /dev/null
     let script_run = |args: &str| -> Output {
-        Command::new("script")
-            .args(["-q", "/dev/null", "sh", "-c", args])
-            .env("HOME", &home)
+        let mut cmd = Command::new("script");
+        if cfg!(target_os = "macos") {
+            cmd.args(["-q", "/dev/null", "sh", "-c", args]);
+        } else {
+            cmd.args(["-qc", args, "/dev/null"]);
+        }
+        cmd.env("HOME", &home)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
