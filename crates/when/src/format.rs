@@ -87,9 +87,16 @@ fn format_relative(diff_nanos: i64) -> String {
     let abs = diff_nanos.unsigned_abs();
     let secs = abs / 1_000_000_000;
 
-    let text = if secs < 1 {
-        return "just now".to_string();
-    } else if secs < 60 {
+    if abs < 1_000_000_000 {
+        let dur = format_duration_human(abs as i64);
+        return if diff_nanos >= 0 {
+            format!("{} ago", dur)
+        } else {
+            format!("in {}", dur)
+        };
+    }
+
+    let text = if secs < 60 {
         format!("{} seconds", secs)
     } else if secs < 3600 {
         let m = secs / 60;
@@ -224,8 +231,10 @@ mod tests {
     }
 
     #[test]
-    fn test_relative_just_now() {
-        assert_eq!(format_relative(500_000_000), "just now");
+    fn test_relative_subsecond() {
+        assert_eq!(format_relative(500_000_000), "500ms ago");
+        assert_eq!(format_relative(-500_000_000), "in 500ms");
+        assert_eq!(format_relative(1_500), "1.5µs ago");
     }
 
     #[test]
