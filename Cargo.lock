@@ -133,6 +133,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "shared",
  "unicode-width",
 ]
 
@@ -1116,6 +1117,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "shared",
 ]
 
 [[package]]
