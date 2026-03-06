@@ -31,14 +31,18 @@ pub fn parse_output_format(s: &str) -> Result<OutputFormat, String> {
     }
 }
 
-pub fn format_result(result: &ExprResult, fmt: &OutputFormat) -> Result<String, String> {
+pub fn format_result(
+    result: &ExprResult,
+    fmt: &OutputFormat,
+    now: Timestamp,
+) -> Result<String, String> {
     match result {
-        ExprResult::Time(ts) => format_timestamp(*ts, fmt),
+        ExprResult::Time(ts) => format_timestamp(*ts, fmt, now),
         ExprResult::Duration(nanos) => Ok(format_duration(*nanos, fmt)),
     }
 }
 
-fn format_timestamp(ts: Timestamp, fmt: &OutputFormat) -> Result<String, String> {
+fn format_timestamp(ts: Timestamp, fmt: &OutputFormat, now: Timestamp) -> Result<String, String> {
     match fmt {
         OutputFormat::Epoch => Ok(ts.epoch_secs().to_string()),
         OutputFormat::EpochMs => Ok(ts.epoch_millis().to_string()),
@@ -60,10 +64,7 @@ fn format_timestamp(ts: Timestamp, fmt: &OutputFormat) -> Result<String, String>
             };
             Ok(dt.to_rfc3339_opts(sec_fmt, true))
         }
-        OutputFormat::Relative => {
-            let now = Timestamp::now();
-            Ok(format_relative(now.0 - ts.0))
-        }
+        OutputFormat::Relative => Ok(format_relative(now.0 - ts.0)),
         OutputFormat::Custom(pattern) => {
             let dt = ts
                 .to_datetime()
@@ -85,8 +86,8 @@ fn format_duration(nanos: i64, fmt: &OutputFormat) -> String {
 
 fn format_relative(diff_nanos: i64) -> String {
     let abs = diff_nanos.unsigned_abs();
-    let secs = abs / 1_000_000_000;
 
+    // For sub-second differences, show precise sub-second units
     if abs < 1_000_000_000 {
         let dur = format_duration_human(abs as i64);
         return if diff_nanos >= 0 {
@@ -96,49 +97,14 @@ fn format_relative(diff_nanos: i64) -> String {
         };
     }
 
-    let text = if secs < 60 {
-        format!("{} seconds", secs)
-    } else if secs < 3600 {
-        let m = secs / 60;
-        if m == 1 {
-            "1 minute".to_string()
-        } else {
-            format!("{} minutes", m)
-        }
-    } else if secs < 86400 {
-        let h = secs / 3600;
-        if h == 1 {
-            "1 hour".to_string()
-        } else {
-            format!("{} hours", h)
-        }
-    } else if secs < 86400 * 30 {
-        let d = secs / 86400;
-        if d == 1 {
-            "1 day".to_string()
-        } else {
-            format!("{} days", d)
-        }
-    } else if secs < 86400 * 365 {
-        let m = secs / (86400 * 30);
-        if m == 1 {
-            "1 month".to_string()
-        } else {
-            format!("{} months", m)
-        }
-    } else {
-        let y = secs / (86400 * 365);
-        if y == 1 {
-            "1 year".to_string()
-        } else {
-            format!("{} years", y)
-        }
-    };
-
+    // For >= 1s, round to whole seconds to avoid sub-second noise
+    // from the delay between eval time and format time
+    let total_secs = abs / 1_000_000_000;
+    let dur = format_duration_human(total_secs as i64 * 1_000_000_000);
     if diff_nanos >= 0 {
-        format!("{} ago", text)
+        format!("{} ago", dur)
     } else {
-        format!("in {}", text)
+        format!("in {}", dur)
     }
 }
 
@@ -239,12 +205,12 @@ mod tests {
 
     #[test]
     fn test_relative_minutes_ago() {
-        assert_eq!(format_relative(180_000_000_000), "3 minutes ago");
+        assert_eq!(format_relative(180_000_000_000), "3m ago");
     }
 
     #[test]
     fn test_relative_future() {
-        assert_eq!(format_relative(-7200_000_000_000), "in 2 hours");
+        assert_eq!(format_relative(-7200_000_000_000), "in 2h");
     }
 
     #[test]

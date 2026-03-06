@@ -21,12 +21,13 @@ struct Cli {
 fn run() -> Result<(), String> {
     let cli = Cli::parse();
     let fmt = format::parse_output_format(&cli.output)?;
+    let now = parse::Timestamp::now();
 
     if cli.expr.is_empty() {
         if io::stdin().is_terminal() {
             // No args, interactive: show current time
-            let result = expr::ExprResult::Time(parse::Timestamp::now());
-            let out = format::format_result(&result, &fmt)?;
+            let result = expr::ExprResult::Time(now);
+            let out = format::format_result(&result, &fmt, now)?;
             println!("{}", out);
         } else {
             // Read from stdin
@@ -40,7 +41,7 @@ fn run() -> Result<(), String> {
                     continue;
                 }
                 let result = expr::eval_expr(line)?;
-                let formatted = format::format_result(&result, &fmt)?;
+                let formatted = format::format_result(&result, &fmt, now)?;
                 if writeln!(out, "{}", formatted).is_err() {
                     break; // broken pipe
                 }
@@ -49,7 +50,7 @@ fn run() -> Result<(), String> {
     } else {
         let input = cli.expr.join(" ");
         let result = expr::eval_expr(&input)?;
-        let out = format::format_result(&result, &fmt)?;
+        let out = format::format_result(&result, &fmt, now)?;
         println!("{}", out);
     }
 
