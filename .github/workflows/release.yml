@@ -67,3 +67,12 @@ jobs:
         with:
           files: nix-pipe-tools-*.tar.gz
           generate_release_notes: true
+
+      - name: Trigger homebrew-tap update
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh api repos/kedoco/homebrew-tap/dispatches \
+            -f event_type=update-formula \
+            -f "client_payload[version]=$VERSION"
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
