@@ -11,6 +11,13 @@ fn prv_cmd(home: &std::path::Path) -> Command {
     cmd
 }
 
+/// Write a prv config with empty ignore patterns so /tmp files aren't skipped.
+fn write_empty_ignore_config(home: &std::path::Path) {
+    let config_dir = home.join(".config/prv");
+    fs::create_dir_all(&config_dir).unwrap();
+    fs::write(config_dir.join("config.toml"), "ignore_patterns = []\n").unwrap();
+}
+
 fn stdout_str(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).to_string()
 }
@@ -93,6 +100,7 @@ fn record_command_succeeds() {
 #[test]
 fn log_shows_recorded_command() {
     let tmp = TempDir::new().unwrap();
+    write_empty_ignore_config(tmp.path());
     let testfile = tmp.path().join("data.txt");
     fs::write(&testfile, "some content").unwrap();
 

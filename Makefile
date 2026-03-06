@@ -1,6 +1,6 @@
 TOOLS = memo tap prv cel when
 
-.PHONY: build test clippy install uninstall clean
+.PHONY: build test clippy install uninstall clean test-linux
 
 build:
 	cargo build --workspace --release
@@ -22,6 +22,13 @@ uninstall:
 		rm -f $${CARGO_HOME:-$$HOME/.cargo}/bin/$$tool; \
 		echo "removed $$tool"; \
 	done
+
+test-linux:
+	docker run --rm \
+		-v $(CURDIR):/workspace \
+		-w /workspace \
+		rust:1-slim \
+		sh -c "apt-get update -qq && apt-get install -y -qq bsdutils >/dev/null 2>&1 && cargo test --workspace"
 
 clean:
 	cargo clean
