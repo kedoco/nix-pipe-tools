@@ -1,0 +1,25 @@
+[workspace]
+members = [
+    "crates/shared",
+    "crates/memo",
+    "crates/tap",
+    "crates/prv",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+nix = { version = "0.29", features = ["process", "signal", "fs", "poll"] }
+tempfile = "3"
+which = "7"
+comfy-table = "7"
+chrono = { version = "0.4", features = ["serde"] }
+shared = { path = "crates/shared" }
