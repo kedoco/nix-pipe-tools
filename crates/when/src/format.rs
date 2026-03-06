@@ -87,7 +87,7 @@ fn format_relative(diff_nanos: i64) -> String {
     let abs = diff_nanos.unsigned_abs();
     let secs = abs / 1_000_000_000;
 
-    let text = if secs < 5 {
+    let text = if secs < 1 {
         return "just now".to_string();
     } else if secs < 60 {
         format!("{} seconds", secs)
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_relative_just_now() {
-        assert_eq!(format_relative(2_000_000_000), "just now");
+        assert_eq!(format_relative(500_000_000), "just now");
     }
 
     #[test]
