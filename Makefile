@@ -1,4 +1,4 @@
-TOOLS = memo tap prv cel when
+TOOLS = memo tap prv cel when has
 
 .PHONY: build test clippy install uninstall clean test-linux
 

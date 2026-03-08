@@ -1,0 +1,12 @@
+[package]
+name = "has"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "has"
+path = "src/main.rs"
+
+[dependencies]
+shared = { workspace = true }
+clap = { workspace = true }

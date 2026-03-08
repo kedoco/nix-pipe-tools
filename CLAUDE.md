@@ -1,6 +1,6 @@
 # Unix Pipe Tools
 
-Cargo workspace with six crates: `shared`, `memo`, `tap`, `prv`, `cel`, `when`.
+Cargo workspace with seven crates: `shared`, `memo`, `tap`, `prv`, `cel`, `when`, `has`.
 
 ## Build & Test
 
@@ -18,6 +18,7 @@ cargo clippy --workspace
 - **prv** (`crates/prv/`) — file provenance tracker via syscall tracing or shell hooks
 - **cel** (`crates/cel/`) — universal tabular text column extractor (auto-detects CSV, TSV, markdown, ASCII-aligned tables)
 - **when** (`crates/when/`) — timestamp converter and time arithmetic (epoch ↔ human, duration math)
+- **has** (`crates/has/`) — resource-to-process lookup: find what process has a file, port, or resource open
 
 All three tools follow Unix philosophy: each does one thing, they compose via pipes, text is the universal interface, silence is golden.
 

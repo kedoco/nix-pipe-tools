@@ -11,6 +11,7 @@ Small, composable Unix utilities for macOS and Linux. Each tool does one thing, 
 | [prv](crates/prv/) | File provenance tracker via syscall tracing or shell hooks |
 | [cel](crates/cel/) | Universal tabular text column extractor |
 | [when](crates/when/) | Timestamp converter and time arithmetic |
+| [has](crates/has/) | Resource-to-process lookup (files, ports, PIDs) |
 
 ## Quick start
 
@@ -42,6 +43,11 @@ prv deps output.bin
 docker ps | cel name,status -o csv
 ps aux | cel pid,command -w '%cpu > 5.0'
 
+# Find what process has a file or port open
+has :8080                     # what's using port 8080?
+has ./data.db                 # what has this file open?
+has 1234                      # what resources does PID 1234 hold?
+
 # Convert timestamps and do time math
 when 1709740800                    # epoch → 2024-03-06T16:00:00Z
 when now + 90d -o "%Y-%m-%d"      # 90 days from now
@@ -72,6 +78,7 @@ cargo install --path crates/tap
 cargo install --path crates/prv
 cargo install --path crates/cel
 cargo install --path crates/when
+cargo install --path crates/has
 ```
 
 ## License

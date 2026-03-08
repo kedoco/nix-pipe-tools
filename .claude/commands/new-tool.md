@@ -7,6 +7,8 @@ You are creating a new Unix pipe tool in the `nix-pipe-tools` workspace. Follow 
 ```
 nix-pipe-tools/
   Cargo.toml          # workspace root — members list, [workspace.dependencies]
+  Makefile            # build/install/uninstall — TOOLS variable lists all tools
+  README.md           # project README — tools table, examples, install instructions
   CLAUDE.md           # architecture overview — update when adding a tool
   crates/
     shared/           # common utilities (hash, fileident, human-readable formatting)
@@ -15,6 +17,7 @@ nix-pipe-tools/
     prv/              # file provenance tracker
     cel/              # tabular text column extractor
     when/             # timestamp converter and time arithmetic
+    has/              # resource-to-process lookup
     <your-tool>/      # new tool goes here
   .claude/commands/
     maintain-memo.md
@@ -22,6 +25,7 @@ nix-pipe-tools/
     maintain-prv.md
     maintain-cel.md
     maintain-when.md
+    maintain-has.md
     <maintain-your-tool>.md  # create one for the new tool
 ```
 
@@ -62,12 +66,22 @@ In root `Cargo.toml`:
 - Add `"crates/<name>"` to `[workspace] members`
 - Add any new dependencies to `[workspace.dependencies]`
 
-### 4. Update CLAUDE.md
+### 4. Update Makefile
+
+- Add the tool name to the `TOOLS` variable in `Makefile`
+
+### 5. Update README.md
+
+- Add a row to the Tools table
+- Add usage examples to the Examples section
+- Add `cargo install --path` line to the individual install list
+
+### 6. Update CLAUDE.md
 
 - Update the crate count in the opening line
 - Add a bullet to the Architecture section
 
-### 5. Create maintainer skill
+### 7. Create maintainer skill
 
 Create `.claude/commands/maintain-<name>.md` following the pattern of existing ones. Include:
 - What the tool does with usage examples
@@ -116,7 +130,7 @@ Create `.claude/commands/maintain-<name>.md` following the pattern of existing o
 - Don't add `unwrap()` in production code paths
 - Don't print to stdout for diagnostics — only data output
 - Don't add dependencies you don't need
-- Don't create a README.md — CLAUDE.md and the maintainer skill are the docs
+- Don't skip the per-crate README — every crate gets one following the pattern in existing crates (install, usage, examples, options table)
 - Don't over-engineer — solve the immediate problem simply
 
 ## Verification checklist
