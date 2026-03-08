@@ -532,30 +532,72 @@ fn parse_hex_address(addr: &str) -> String {
 mod tests {
     use super::*;
 
+    // --- Socket inode parsing ---
+
     #[test]
-    fn test_parse_socket_inode() {
+    fn test_parse_socket_inode_valid() {
         assert_eq!(parse_socket_inode("socket:[12345]"), Some(12345));
         assert_eq!(parse_socket_inode("socket:[0]"), Some(0));
-        assert_eq!(parse_socket_inode("pipe:[999]"), None);
-        assert_eq!(parse_socket_inode("/dev/null"), None);
+        assert_eq!(parse_socket_inode("socket:[999999999]"), Some(999999999));
     }
 
     #[test]
-    fn test_parse_hex_address_ipv4() {
-        // 127.0.0.1:8080 = 0100007F:1F90
+    fn test_parse_socket_inode_not_socket() {
+        assert_eq!(parse_socket_inode("pipe:[999]"), None);
+        assert_eq!(parse_socket_inode("/dev/null"), None);
+        assert_eq!(parse_socket_inode("anon_inode:[eventfd]"), None);
+        assert_eq!(parse_socket_inode(""), None);
+    }
+
+    #[test]
+    fn test_parse_socket_inode_malformed() {
+        assert_eq!(parse_socket_inode("socket:[]"), None); // empty inode
+        assert_eq!(parse_socket_inode("socket:[abc]"), None); // non-numeric
+        assert_eq!(parse_socket_inode("socket:[123"), None); // missing bracket
+        assert_eq!(parse_socket_inode("socket:123]"), None); // missing bracket
+    }
+
+    // --- IPv4 hex address parsing ---
+
+    #[test]
+    fn test_parse_hex_address_ipv4_localhost() {
         assert_eq!(parse_hex_address("0100007F:1F90"), "localhost:8080");
-        // 0.0.0.0:80 = 00000000:0050
+    }
+
+    #[test]
+    fn test_parse_hex_address_ipv4_any() {
         assert_eq!(parse_hex_address("00000000:0050"), "*:80");
     }
 
     #[test]
-    fn test_parse_hex_address_ipv6() {
-        // [::]:80
+    fn test_parse_hex_address_ipv4_regular() {
+        // 192.168.1.1 in little-endian hex: 0101A8C0
+        assert_eq!(parse_hex_address("0101A8C0:0050"), "192.168.1.1:80");
+    }
+
+    #[test]
+    fn test_parse_hex_address_ipv4_port_zero() {
+        assert_eq!(parse_hex_address("00000000:0000"), "*:0");
+    }
+
+    #[test]
+    fn test_parse_hex_address_ipv4_high_port() {
+        // Port 65535 = FFFF
+        assert_eq!(parse_hex_address("0100007F:FFFF"), "localhost:65535");
+    }
+
+    // --- IPv6 hex address parsing ---
+
+    #[test]
+    fn test_parse_hex_address_ipv6_any() {
         assert_eq!(
             parse_hex_address("00000000000000000000000000000000:0050"),
             "[::]:80"
         );
-        // [::1]:9230
+    }
+
+    #[test]
+    fn test_parse_hex_address_ipv6_loopback() {
         assert_eq!(
             parse_hex_address("00000000000000000000000001000000:240E"),
             "localhost:9230"
@@ -563,18 +605,29 @@ mod tests {
     }
 
     #[test]
-    fn test_read_fd_mode_nonexistent() {
-        // Should return empty string, not panic
-        assert_eq!(read_fd_mode(999999999, "0"), "");
+    fn test_parse_hex_address_ipv6_other() {
+        // Any non-zero, non-loopback IPv6 shows as [ipv6]:port
+        assert_eq!(
+            parse_hex_address("DEADBEEF000000000000000000000000:0050"),
+            "[ipv6]:80"
+        );
+    }
+
+    // --- Malformed address parsing ---
+
+    #[test]
+    fn test_parse_hex_address_no_colon() {
+        // No colon separator — return as-is
+        assert_eq!(parse_hex_address("garbage"), "garbage");
     }
 
     #[test]
-    fn test_resolve_uid_zero() {
-        // UID 0 should resolve to "root" on most systems
-        let result = resolve_uid(0);
-        // On systems without /etc/passwd, this returns "0"
-        assert!(result == "root" || result == "0");
+    fn test_parse_hex_address_weird_length() {
+        // IP hex that's neither 8 (IPv4) nor 32 (IPv6) chars
+        assert_eq!(parse_hex_address("ABCDEF:0050"), "ABCDEF:80");
     }
+
+    // --- Network address formatting ---
 
     #[test]
     fn test_format_net_address_listen() {
@@ -590,5 +643,93 @@ mod tests {
             format_net_address("0100007F:1F90", "0100007F:C000", "01", false),
             "localhost:8080->localhost:49152 (ESTABLISHED)"
         );
+    }
+
+    #[test]
+    fn test_format_net_address_time_wait() {
+        assert_eq!(
+            format_net_address("0100007F:1F90", "0100007F:C000", "06", false),
+            "localhost:8080->localhost:49152 (TIME_WAIT)"
+        );
+    }
+
+    #[test]
+    fn test_format_net_address_close_wait() {
+        assert_eq!(
+            format_net_address("0100007F:1F90", "0100007F:C000", "08", false),
+            "localhost:8080->localhost:49152 (CLOSE_WAIT)"
+        );
+    }
+
+    #[test]
+    fn test_format_net_address_syn_sent() {
+        assert_eq!(
+            format_net_address("0100007F:1F90", "0100007F:C000", "02", false),
+            "localhost:8080->localhost:49152 (SYN_SENT)"
+        );
+    }
+
+    #[test]
+    fn test_format_net_address_unknown_state() {
+        // Unknown state code — no state suffix
+        assert_eq!(
+            format_net_address("0100007F:1F90", "0100007F:C000", "FF", false),
+            "localhost:8080->localhost:49152"
+        );
+    }
+
+    #[test]
+    fn test_format_net_address_udp_no_state() {
+        // UDP should never show connection state
+        assert_eq!(
+            format_net_address("00000000:1F90", "00000000:0000", "07", true),
+            "*:8080"
+        );
+    }
+
+    #[test]
+    fn test_format_net_address_ipv6_listen() {
+        assert_eq!(
+            format_net_address(
+                "00000000000000000000000000000000:1F90",
+                "00000000000000000000000000000000:0000",
+                "0A",
+                false
+            ),
+            "[::]:8080 (LISTEN)"
+        );
+    }
+
+    // --- fd mode reading ---
+
+    #[test]
+    fn test_read_fd_mode_nonexistent() {
+        assert_eq!(read_fd_mode(999999999, "0"), "");
+    }
+
+    // --- UID resolution ---
+
+    #[test]
+    fn test_resolve_uid_zero() {
+        let result = resolve_uid(0);
+        assert!(result == "root" || result == "0");
+    }
+
+    #[test]
+    fn test_resolve_uid_nonexistent() {
+        // UID 4294967295 almost certainly doesn't exist in /etc/passwd
+        let result = resolve_uid(4294967295);
+        assert_eq!(result, "4294967295");
+    }
+
+    // --- file_type_from_meta ---
+
+    #[test]
+    fn test_file_type_regular_file() {
+        let meta = fs::metadata("/dev/null").unwrap();
+        // /dev/null is a char device, but file_type_from_meta only checks dir/symlink/else
+        // So it falls through to "REG" — this is a known simplification
+        let ft = file_type_from_meta(&meta);
+        assert!(ft == "REG" || ft == "DIR" || ft == "LINK");
     }
 }

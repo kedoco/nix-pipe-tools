@@ -186,4 +186,122 @@ mod tests {
         let entries = parse_output("").unwrap();
         assert!(entries.is_empty());
     }
+
+    #[test]
+    fn parse_blank_lines_ignored() {
+        let input = "p1234\n\ncpython\n\nLkevin\nf3\ntREG\nar\nn/tmp/db\n\n";
+        let entries = parse_output(input).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].pid, "1234");
+    }
+
+    #[test]
+    fn parse_process_with_no_files() {
+        // Process block but no file entries — nothing should be emitted
+        let input = "p1234\ncpython\nLkevin\n";
+        let entries = parse_output(input).unwrap();
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn parse_fd_without_name_is_skipped() {
+        // fd entry with type and access but no name line — should not produce entry
+        let input = "p1234\ncpython\nLkevin\nf3\ntREG\nar\n";
+        let entries = parse_output(input).unwrap();
+        assert!(entries.is_empty());
+    }
+
+    #[test]
+    fn parse_missing_optional_fields() {
+        // No type, no access — should still produce entry with empty fields
+        let input = "p1234\nctest\nLuser\nf5\nn/some/path\n";
+        let entries = parse_output(input).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].fd, "5");
+        assert_eq!(entries[0].file_type, "");
+        assert_eq!(entries[0].access, "");
+        assert_eq!(entries[0].name, "/some/path");
+    }
+
+    #[test]
+    fn parse_missing_user() {
+        // No L (login) line — user should be empty
+        let input = "p1234\nctest\nf3\ntREG\nar\nn/tmp/db\n";
+        let entries = parse_output(input).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].user, "");
+    }
+
+    #[test]
+    fn parse_unknown_tags_ignored() {
+        // Unknown tags like 'g' (group), 'R' (parent PID) should be skipped
+        let input = "p1234\nctest\nLuser\ng999\nR1\nf3\ntREG\nar\nn/tmp/db\n";
+        let entries = parse_output(input).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].pid, "1234");
+    }
+
+    #[test]
+    fn parse_name_with_special_chars() {
+        // File names can contain spaces, parens, arrows (like lsof socket names)
+        let input = "p1\ncx\nLu\nf3\ntIPv4\nau\nn127.0.0.1:8080->192.168.1.1:52341 (ESTABLISHED)\n";
+        let entries = parse_output(input).unwrap();
+        assert_eq!(entries[0].name, "127.0.0.1:8080->192.168.1.1:52341 (ESTABLISHED)");
+    }
+
+    #[test]
+    fn parse_name_with_spaces() {
+        let input = "p1\ncx\nLu\nf3\ntREG\nar\nn/path/to/my file with spaces.txt\n";
+        let entries = parse_output(input).unwrap();
+        assert_eq!(entries[0].name, "/path/to/my file with spaces.txt");
+    }
+
+    #[test]
+    fn parse_command_with_special_chars() {
+        // Command names can contain various characters
+        let input = "p1\ncnode-v18.0\nLu\nf3\ntREG\nar\nn/tmp/x\n";
+        let entries = parse_output(input).unwrap();
+        assert_eq!(entries[0].command, "node-v18.0");
+    }
+
+    #[test]
+    fn parse_new_process_flushes_pending_file() {
+        // When a new process block starts, the previous file entry should be flushed
+        let input = "p100\ncfirst\nLu1\nf3\ntREG\nar\nn/tmp/a\np200\ncsecond\nLu2\nf4\ntREG\naw\nn/tmp/b\n";
+        let entries = parse_output(input).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].pid, "100");
+        assert_eq!(entries[0].name, "/tmp/a");
+        assert_eq!(entries[1].pid, "200");
+        assert_eq!(entries[1].name, "/tmp/b");
+    }
+
+    #[test]
+    fn parse_type_and_access_reset_between_files() {
+        // Each new fd should start with clean type/access, not carry over from previous
+        let input = "p1\ncx\nLu\nf3\ntREG\narw\nn/tmp/a\nf4\nn/tmp/b\n";
+        let entries = parse_output(input).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].file_type, "REG");
+        assert_eq!(entries[0].access, "rw");
+        // Second entry should have cleared type/access since none were specified
+        assert_eq!(entries[1].file_type, "");
+        assert_eq!(entries[1].access, "");
+    }
+
+    #[test]
+    fn parse_cwd_and_txt_fd_names() {
+        // lsof uses special fd names like "cwd", "txt", "mem", "rtd"
+        let input = "p1\ncx\nLu\nfcwd\ntDIR\nar\nn/home/user\nftxt\ntREG\nar\nn/usr/bin/python\n";
+        let entries = parse_output(input).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].fd, "cwd");
+        assert_eq!(entries[1].fd, "txt");
+    }
+
+    #[test]
+    fn parse_only_whitespace_input() {
+        let entries = parse_output("   \n  \n").unwrap();
+        assert!(entries.is_empty());
+    }
 }
