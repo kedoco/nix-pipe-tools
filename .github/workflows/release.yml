@@ -43,7 +43,7 @@ jobs:
       - name: Package binaries
         run: |
           mkdir -p dist
-          for bin in memo tap prv cel when; do
+          for bin in memo tap prv cel when has; do
             cp target/${{ matrix.target }}/release/$bin dist/ 2>/dev/null || true
           done
           cd dist
