@@ -427,7 +427,7 @@ fn parse_hex_ip(addr: &str) -> Option<std::net::IpAddr> {
         for i in 0..4 {
             let word_hex = &ip_hex[i * 8..(i + 1) * 8];
             let word = u32::from_str_radix(word_hex, 16).ok()?;
-            octets[i * 4] = ((word >> 0) & 0xFF) as u8;
+            octets[i * 4] = (word & 0xFF) as u8;
             octets[i * 4 + 1] = ((word >> 8) & 0xFF) as u8;
             octets[i * 4 + 2] = ((word >> 16) & 0xFF) as u8;
             octets[i * 4 + 3] = ((word >> 24) & 0xFF) as u8;
