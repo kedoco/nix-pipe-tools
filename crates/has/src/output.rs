@@ -17,23 +17,6 @@ pub fn print_process_table(entries: &[Entry], no_header: bool) {
     print_table(&headers, &rows, no_header);
 }
 
-/// Print a table of resources held by a process (PID query).
-///
-/// ```text
-/// FD    TYPE    MODE    NAME
-/// 3     REG     rw      /var/data/data.db
-/// 4     IPv4    u       *:8080
-/// ```
-pub fn print_resource_table(entries: &[Entry], no_header: bool) {
-    let headers = ["FD", "TYPE", "MODE", "NAME"];
-    let rows: Vec<[&str; 4]> = entries
-        .iter()
-        .map(|e| [e.fd.as_str(), e.file_type.as_str(), e.access.as_str(), e.name.as_str()])
-        .collect();
-
-    print_table(&headers, &rows, no_header);
-}
-
 fn print_table<const N: usize>(headers: &[&str; N], rows: &[[&str; N]], no_header: bool) {
     // Calculate column widths
     let mut widths = [0usize; N];
@@ -103,13 +86,4 @@ mod tests {
         print_process_table(&entries, true);
     }
 
-    #[test]
-    fn resource_table_alignment() {
-        let entries = vec![
-            make_entry("1", "x", "u", "3", "REG", "rw", "/tmp/data.db"),
-            make_entry("1", "x", "u", "4", "IPv4", "u", "*:8080"),
-        ];
-        print_resource_table(&entries, false);
-        print_resource_table(&entries, true);
-    }
 }

@@ -11,7 +11,7 @@ Small, composable Unix utilities for macOS and Linux. Each tool does one thing, 
 | [prv](crates/prv/) | File provenance tracker via syscall tracing or shell hooks |
 | [cel](crates/cel/) | Universal tabular text column extractor |
 | [when](crates/when/) | Timestamp converter and time arithmetic |
-| [has](crates/has/) | Resource-to-process lookup (files, ports, PIDs) |
+| [has](crates/has/) | Resource-to-process lookup (files, ports, addresses) |
 
 ## Quick start
 
@@ -43,10 +43,11 @@ prv deps output.bin
 docker ps | cel name,status -o csv
 ps aux | cel pid,command -w '%cpu > 5.0'
 
-# Find what process has a file or port open
+# Find what process has a file, port, or address open
 has :8080                     # what's using port 8080?
 has ./data.db                 # what has this file open?
-has 1234                      # what resources does PID 1234 hold?
+has 192.168.1.1               # who's connected to this IP?
+has :8080 :3000 ./data.db     # query multiple resources at once
 
 # Convert timestamps and do time math
 when 1709740800                    # epoch → 2024-03-06T16:00:00Z

@@ -24,14 +24,33 @@ fn stderr_str(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr).to_string()
 }
 
+fn run_with_stdin(args: &[&str], stdin_data: &str) -> Output {
+    let mut child = has_cmd()
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin_data.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
 // ---------------------------------------------------------------------------
 // CLI basics
 // ---------------------------------------------------------------------------
 
 #[test]
-fn no_args_exits_nonzero() {
-    let out = run(&[]);
-    assert!(!out.status.success());
+fn no_args_empty_stdin_produces_no_output() {
+    // No args, empty stdin → no results, exit 0
+    let out = run_with_stdin(&[], "");
+    assert!(out.status.success());
+    assert!(stdout_str(&out).is_empty());
 }
 
 #[test]
@@ -41,7 +60,6 @@ fn help_flag_exits_zero() {
     let help = stdout_str(&out);
     assert!(help.contains("file path"));
     assert!(help.contains(":port"));
-    assert!(help.contains("PID"));
 }
 
 #[test]
@@ -142,40 +160,6 @@ fn port_query_no_header_flag() {
 }
 
 // ---------------------------------------------------------------------------
-// PID queries
-// ---------------------------------------------------------------------------
-
-#[test]
-fn pid_query_nonexistent_pid() {
-    // PID 4294967295 almost certainly doesn't exist
-    let out = run(&["4294967295"]);
-    assert!(out.status.success());
-    // Either empty (process doesn't exist) or error — both are fine
-}
-
-#[test]
-fn pid_query_self_shows_resources() {
-    // Query our own parent process (the test runner)
-    let our_pid = std::process::id().to_string();
-    let out = run(&[&our_pid]);
-
-    // has spawns as a child, so it queries *our* PID.
-    // We might not have permissions or the process may exit fast,
-    // but it should not crash.
-    assert!(out.status.success() || !stderr_str(&out).is_empty());
-}
-
-#[test]
-fn pid_query_no_header_flag() {
-    let our_pid = std::process::id().to_string();
-    let out = run(&["-H", &our_pid]);
-    let stdout = stdout_str(&out);
-    // Should NOT contain the header row
-    assert!(!stdout.contains("FD"));
-    assert!(!stdout.contains("TYPE"));
-}
-
-// ---------------------------------------------------------------------------
 // File queries
 // ---------------------------------------------------------------------------
 
@@ -269,23 +253,126 @@ fn process_table_columns_aligned() {
     drop(listener);
 }
 
-#[test]
-fn resource_table_columns_aligned() {
-    // Use PID 1 or our own PID to get resource output
-    let our_pid = std::process::id().to_string();
-    let out = run(&[&our_pid]);
-    let stdout = stdout_str(&out);
+// ---------------------------------------------------------------------------
+// Address queries
+// ---------------------------------------------------------------------------
 
+#[test]
+fn address_query_ipv4_no_crash() {
+    // Query an IP — may or may not find connections, but should not crash
+    let out = run(&["127.0.0.1"]);
+    assert!(out.status.success());
+}
+
+#[test]
+fn address_query_finds_listener() {
+    // Bind a port, then query by the listener's address
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let out = run(&["127.0.0.1"]);
+    assert!(out.status.success());
+
+    let stdout = stdout_str(&out);
     if !stdout.is_empty() {
-        let lines: Vec<&str> = stdout.lines().collect();
-        if lines.len() >= 2 {
-            let header = lines[0];
-            assert!(header.contains("FD"));
-            assert!(header.contains("TYPE"));
-            assert!(header.contains("MODE"));
-            assert!(header.contains("NAME"));
-        }
+        // Should use the process table format
+        assert!(stdout.contains("PID"));
+        assert!(stdout.contains("PROCESS"));
     }
+    drop(listener);
+}
+
+#[test]
+fn address_query_hostname_no_crash() {
+    // Querying a hostname that can't resolve produces a clean error
+    let out = run(&["nonexistent.invalid"]);
+    // Should exit non-zero with an error, not panic/crash
+    assert!(!out.status.success());
+    assert!(!stderr_str(&out).is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Multiple args
+// ---------------------------------------------------------------------------
+
+#[test]
+fn multiple_args_combines_results() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    // Query both a port and a file in one invocation
+    let out = run(&[&format!(":{}", port), "/dev/null"]);
+    assert!(out.status.success());
+
+    let stdout = stdout_str(&out);
+    if !stdout.is_empty() {
+        // Single header row, results from both queries
+        let header_count = stdout.lines().filter(|l| l.contains("PID")).count();
+        assert_eq!(header_count, 1, "should have exactly one header row");
+    }
+    drop(listener);
+}
+
+#[test]
+fn multiple_args_partial_error() {
+    // One valid resource, one invalid — should still show results + error
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let out = run(&[&format!(":{}", port), "/tmp/has_nonexistent_xyz_12345"]);
+    // Should succeed (found results) but also report error on stderr
+    let stdout = stdout_str(&out);
+    let stderr = stderr_str(&out);
+    if !stdout.is_empty() {
+        assert!(stdout.contains("PID"));
+    }
+    assert!(stderr.contains("no such file"));
+    drop(listener);
+}
+
+// ---------------------------------------------------------------------------
+// Stdin support
+// ---------------------------------------------------------------------------
+
+#[test]
+fn stdin_reads_resources() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let out = run_with_stdin(&[], &format!(":{}\n", port));
+    assert!(out.status.success());
+
+    let stdout = stdout_str(&out);
+    if !stdout.is_empty() {
+        assert!(stdout.contains("PID"));
+        let our_pid = std::process::id().to_string();
+        assert!(stdout.contains(&our_pid));
+    }
+    drop(listener);
+}
+
+#[test]
+fn stdin_ignores_blank_lines() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let out = run_with_stdin(&[], &format!("\n\n:{}\n\n", port));
+    assert!(out.status.success());
+    drop(listener);
+}
+
+#[test]
+fn stdin_multiple_resources() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let out = run_with_stdin(&[], &format!(":{}\n/dev/null\n", port));
+    assert!(out.status.success());
+
+    let stdout = stdout_str(&out);
+    if !stdout.is_empty() {
+        let header_count = stdout.lines().filter(|l| l.contains("PID")).count();
+        assert_eq!(header_count, 1, "should have exactly one header row");
+    }
+    drop(listener);
 }
 
 // ---------------------------------------------------------------------------
@@ -293,10 +380,8 @@ fn resource_table_columns_aligned() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn dot_slash_prefix_forces_file_not_pid() {
-    // "./0" should be treated as a file path, not PID 0
+fn dot_slash_prefix_forces_file() {
     let out = run(&["./0"]);
-    // Will fail with "no such file" — that's correct (it's a file query, not PID)
     let err = stderr_str(&out);
     assert!(err.contains("no such file"), "expected file error, got: {}", err);
 }

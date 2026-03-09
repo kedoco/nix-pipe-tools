@@ -14,9 +14,9 @@ pub fn query_port(port: u16) -> Result<Vec<Entry>, String> {
     run_lsof(&["-i", &format!(":{}", port)])
 }
 
-/// Query lsof for resources held by the given PID.
-pub fn query_pid(pid: u32) -> Result<Vec<Entry>, String> {
-    run_lsof(&["-p", &pid.to_string()])
+/// Query lsof for processes with connections to the given address.
+pub fn query_address(addr: &str) -> Result<Vec<Entry>, String> {
+    run_lsof(&["-i", &format!("@{}", addr)])
 }
 
 fn run_lsof(extra_args: &[&str]) -> Result<Vec<Entry>, String> {

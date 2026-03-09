@@ -11,10 +11,10 @@ cargo install --path crates/has
 ## Usage
 
 ```
-has <RESOURCE> [OPTIONS]
+has [RESOURCE...] [OPTIONS]
 ```
 
-Give `has` a file path, port, or PID and it tells you what's using it.
+Give `has` a file path, port, IP address, or hostname and it tells you what process is using it. Pass multiple resources as arguments, or pipe them via stdin — one per line.
 
 ## Examples
 
@@ -40,18 +40,36 @@ PID     PROCESS    USER     FD    MODE
 5678    sqlite3    kevin    5     r
 ```
 
-### See what resources a process holds
+### Find connections to an address
 
 ```
-$ has 47543
-FD     TYPE      MODE    NAME
-cwd    DIR               /Users/kevin/dev/myproject
-txt    REG               /usr/local/bin/node
-0      unix      u       ->(none)
-3      KQUEUE    u       count=0, state=0xa
-13     IPv4      u       localhost:9230
-14     IPv4      u       localhost:8788
-16     IPv4      u       localhost:9230->localhost:58176
+$ has 192.168.1.1
+PID     PROCESS    USER     FD    MODE
+99854   chrome     kevin    26    u
+
+$ has api.example.com
+PID     PROCESS    USER     FD    MODE
+1492    curl       kevin    5     u
+```
+
+### Multiple resources at once
+
+```
+$ has :8080 :3000 ./data.db
+PID     PROCESS    USER     FD    MODE
+18429   node       kevin    14    u
+5521    rails      kevin    9     u
+1234    python     kevin    3     rw
+```
+
+### Pipe resources from stdin
+
+```
+# Find who has ports 80 and 443
+echo -e ":80\n:443" | has
+
+# Compose with other tools
+some-command | has
 ```
 
 ### Compose with other tools
@@ -71,15 +89,14 @@ has :3000 -H | awk '{print $1}' | xargs kill
 
 | Input | Detected as | Example |
 |-------|-------------|---------|
+| IPv4/IPv6 address | Network address | `has 192.168.1.1`, `has ::1` |
 | `:N` | Port number | `has :8080` |
-| Digits only | PID | `has 1234` |
+| `host.name` | Hostname | `has api.example.com` |
 | Anything else | File path | `has ./data.db` |
-
-To look up a file whose name is purely numeric, use a path prefix: `has ./1234`.
 
 ## Output
 
-**File or port query** — shows processes holding that resource:
+All queries produce the same table format:
 
 | Column | Description |
 |--------|-------------|
@@ -89,15 +106,6 @@ To look up a file whose name is purely numeric, use a path prefix: `has ./1234`.
 | FD | File descriptor number |
 | MODE | Access mode: `r` read, `w` write, `u` read/write |
 
-**PID query** — shows resources held by that process:
-
-| Column | Description |
-|--------|-------------|
-| FD | File descriptor number (or `cwd`, `txt`, etc.) |
-| TYPE | Resource type: REG (file), DIR, IPv4, IPv6, unix, KQUEUE, etc. |
-| MODE | Access mode |
-| NAME | File path, socket address, or resource description |
-
 ## Options
 
 | Option | Description |
@@ -106,6 +114,7 @@ To look up a file whose name is purely numeric, use a path prefix: `has ./1234`.
 
 ## Notes
 
-- Requires `lsof` (pre-installed on macOS and most Linux distributions)
+- Uses `lsof` on macOS, native `/proc` on Linux (no external dependencies)
 - Some processes may require root to inspect
 - No output and exit 0 when no results are found (silence is golden)
+- When some resources succeed and others fail, results go to stdout and errors go to stderr

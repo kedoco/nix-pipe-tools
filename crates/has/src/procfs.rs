@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::types::Entry;
 
@@ -106,99 +106,67 @@ pub fn query_port(port: u16) -> Result<Vec<Entry>, String> {
     Ok(entries)
 }
 
-/// List all resources held by the given PID.
-pub fn query_pid(pid: u32) -> Result<Vec<Entry>, String> {
-    let proc_dir = PathBuf::from(format!("/proc/{}", pid));
-    if !proc_dir.exists() {
+/// Find processes with connections to the given IP address or hostname.
+pub fn query_address(addr: &str) -> Result<Vec<Entry>, String> {
+    use std::net::ToSocketAddrs;
+
+    // Resolve the address to a set of IPs
+    let ips: Vec<std::net::IpAddr> = if let Ok(ip) = addr.parse::<std::net::IpAddr>() {
+        vec![ip]
+    } else {
+        // Resolve hostname — use port 0 as placeholder for ToSocketAddrs
+        let sock_addrs: Vec<_> = format!("{}:0", addr)
+            .to_socket_addrs()
+            .map_err(|e| format!("cannot resolve {}: {}", addr, e))?
+            .collect();
+        if sock_addrs.is_empty() {
+            return Err(format!("cannot resolve {}: no addresses found", addr));
+        }
+        sock_addrs.into_iter().map(|sa| sa.ip()).collect()
+    };
+
+    let socket_inodes = find_address_inodes(&ips)?;
+    if socket_inodes.is_empty() {
         return Ok(Vec::new());
     }
 
-    let proc_info = read_process_info(pid)
-        .ok_or_else(|| format!("cannot read process {}", pid))?;
-
-    // Build socket inode → info map for resolving socket fds
-    let socket_map = build_socket_map();
-
     let mut entries = Vec::new();
 
-    // Current working directory
-    if let Ok(cwd) = fs::read_link(format!("/proc/{}/cwd", pid)) {
-        entries.push(Entry {
-            pid: pid.to_string(),
-            command: proc_info.command.clone(),
-            user: proc_info.user.clone(),
-            fd: "cwd".to_string(),
-            file_type: "DIR".to_string(),
-            access: String::new(),
-            name: cwd.display().to_string(),
-        });
-    }
+    for pid in list_pids() {
+        let proc_info = match read_process_info(pid) {
+            Some(info) => info,
+            None => continue,
+        };
 
-    // Executable
-    if let Ok(exe) = fs::read_link(format!("/proc/{}/exe", pid)) {
-        entries.push(Entry {
-            pid: pid.to_string(),
-            command: proc_info.command.clone(),
-            user: proc_info.user.clone(),
-            fd: "txt".to_string(),
-            file_type: "REG".to_string(),
-            access: String::new(),
-            name: exe.display().to_string(),
-        });
-    }
-
-    // File descriptors
-    let fd_dir = format!("/proc/{}/fd", pid);
-    let mut fd_entries: Vec<_> = match fs::read_dir(&fd_dir) {
-        Ok(entries) => entries.flatten().collect(),
-        Err(_) => Vec::new(),
-    };
-    // Sort by fd number
-    fd_entries.sort_by_key(|e| {
-        e.file_name()
-            .to_string_lossy()
-            .parse::<u64>()
-            .unwrap_or(u64::MAX)
-    });
-
-    for entry in fd_entries {
-        let fd_name = entry.file_name().to_string_lossy().to_string();
-        let link = match fs::read_link(entry.path()) {
-            Ok(l) => l,
+        let fd_dir = format!("/proc/{}/fd", pid);
+        let fd_entries = match fs::read_dir(&fd_dir) {
+            Ok(entries) => entries,
             Err(_) => continue,
         };
-        let link_str = link.to_string_lossy().to_string();
-        let access = read_fd_mode(pid, &fd_name);
 
-        let (file_type, name) = if let Some(inode) = parse_socket_inode(&link_str) {
-            if let Some(sock_info) = socket_map.get(&inode) {
-                (sock_info.proto.clone(), sock_info.display.clone())
-            } else {
-                ("sock".to_string(), format!("socket:[{}]", inode))
-            }
-        } else if link_str.starts_with("pipe:[") {
-            ("PIPE".to_string(), link_str)
-        } else if link_str.starts_with("anon_inode:") {
-            let kind = link_str.strip_prefix("anon_inode:").unwrap_or(&link_str);
-            (kind.trim_matches(|c| c == '[' || c == ']').to_uppercase(), link_str)
-        } else {
-            // Regular file, directory, device, etc.
-            let ft = match fs::metadata(entry.path()) {
-                Ok(meta) => file_type_from_meta(&meta),
-                Err(_) => "?".to_string(),
+        for entry in fd_entries.flatten() {
+            let fd_name = entry.file_name().to_string_lossy().to_string();
+            let link = match fs::read_link(entry.path()) {
+                Ok(l) => l,
+                Err(_) => continue,
             };
-            (ft, link_str)
-        };
+            let link_str = link.to_string_lossy();
 
-        entries.push(Entry {
-            pid: pid.to_string(),
-            command: proc_info.command.clone(),
-            user: proc_info.user.clone(),
-            fd: fd_name,
-            file_type,
-            access,
-            name,
-        });
+            if let Some(inode) = parse_socket_inode(&link_str) {
+                if let Some(sock_info) = socket_inodes.get(&inode) {
+                    let access = read_fd_mode(pid, &fd_name);
+                    entries.push(Entry {
+                        pid: pid.to_string(),
+                        command: proc_info.command.clone(),
+                        user: proc_info.user.clone(),
+                        fd: fd_name,
+                        file_type: sock_info.proto.clone(),
+                        access,
+                        name: sock_info.display.clone(),
+                    });
+                }
+            }
+        }
     }
 
     Ok(entries)
@@ -380,8 +348,8 @@ fn find_port_inodes(port: u16) -> Result<HashMap<u64, SocketInfo>, String> {
     Ok(map)
 }
 
-/// Build a complete socket inode → info map from all /proc/net/* files.
-fn build_socket_map() -> HashMap<u64, SocketInfo> {
+/// Find socket inodes matching any of the given IP addresses in /proc/net/*.
+fn find_address_inodes(ips: &[std::net::IpAddr]) -> Result<HashMap<u64, SocketInfo>, String> {
     let mut map = HashMap::new();
 
     for (path, proto) in &[
@@ -408,6 +376,18 @@ fn build_socket_map() -> HashMap<u64, SocketInfo> {
             let state = fields[3];
             let inode_str = fields[9];
 
+            // Check if local or remote IP matches any of our target IPs
+            let local_ip = parse_hex_ip(local_addr);
+            let remote_ip = parse_hex_ip(remote_addr);
+
+            let matches = ips.iter().any(|ip| {
+                Some(*ip) == local_ip || Some(*ip) == remote_ip
+            });
+
+            if !matches {
+                continue;
+            }
+
             let inode = match inode_str.parse::<u64>() {
                 Ok(i) if i > 0 => i,
                 _ => continue,
@@ -427,35 +407,38 @@ fn build_socket_map() -> HashMap<u64, SocketInfo> {
         }
     }
 
-    // Unix domain sockets
-    if let Ok(content) = fs::read_to_string("/proc/net/unix") {
-        for line in content.lines().skip(1) {
-            let fields: Vec<&str> = line.split_whitespace().collect();
-            if fields.len() < 7 {
-                continue;
-            }
-
-            let inode = match fields[6].parse::<u64>() {
-                Ok(i) if i > 0 => i,
-                _ => continue,
-            };
-
-            let path = if fields.len() > 7 { fields[7] } else { "" };
-            let display = if path.is_empty() {
-                "unix socket".to_string()
-            } else {
-                path.to_string()
-            };
-
-            map.insert(inode, SocketInfo {
-                proto: "unix".to_string(),
-                display,
-            });
-        }
-    }
-
-    map
+    Ok(map)
 }
+
+/// Parse the IP portion of a hex-encoded address like `0100007F:1F90` into an IpAddr.
+fn parse_hex_ip(addr: &str) -> Option<std::net::IpAddr> {
+    let ip_hex = addr.split(':').next()?;
+
+    if ip_hex.len() == 8 {
+        let ip_num = u32::from_str_radix(ip_hex, 16).ok()?;
+        let a = (ip_num & 0xFF) as u8;
+        let b = ((ip_num >> 8) & 0xFF) as u8;
+        let c = ((ip_num >> 16) & 0xFF) as u8;
+        let d = ((ip_num >> 24) & 0xFF) as u8;
+        Some(std::net::IpAddr::V4(std::net::Ipv4Addr::new(a, b, c, d)))
+    } else if ip_hex.len() == 32 {
+        // IPv6: four little-endian 32-bit words
+        let mut octets = [0u8; 16];
+        for i in 0..4 {
+            let word_hex = &ip_hex[i * 8..(i + 1) * 8];
+            let word = u32::from_str_radix(word_hex, 16).ok()?;
+            octets[i * 4] = ((word >> 0) & 0xFF) as u8;
+            octets[i * 4 + 1] = ((word >> 8) & 0xFF) as u8;
+            octets[i * 4 + 2] = ((word >> 16) & 0xFF) as u8;
+            octets[i * 4 + 3] = ((word >> 24) & 0xFF) as u8;
+        }
+        Some(std::net::IpAddr::V6(std::net::Ipv6Addr::from(octets)))
+    } else {
+        None
+    }
+}
+
+
 
 /// Format a /proc/net/* address pair into a human-readable string.
 ///
