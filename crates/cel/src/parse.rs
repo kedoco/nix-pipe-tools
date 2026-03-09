@@ -150,6 +150,11 @@ fn parse_ascii(input: &str) -> Result<Table, String> {
     let header_line = lines[0];
     let col_starts = find_column_starts(header_line, &lines[1..]);
 
+    // Fall back to whitespace splitting if no clear column boundaries found
+    if col_starts.len() < 2 {
+        return parse_whitespace(input);
+    }
+
     let extract_cells = |line: &str| -> Vec<String> {
         let mut cells = Vec::new();
         for (i, &start) in col_starts.iter().enumerate() {
@@ -178,18 +183,27 @@ fn parse_ascii(input: &str) -> Result<Table, String> {
     Ok(Table { headers, rows })
 }
 
-/// Find column start positions from header: position where non-space starts after 2+ spaces.
-/// Validated against data rows.
+/// Find column start positions from header, validated against data rows.
+///
+/// Two-pass approach:
+/// 1. Find columns separated by 2+ spaces in the header (handles most tabular output).
+/// 2. If that finds fewer columns than header words, try 1-space gaps validated by
+///    requiring nearly ALL data rows to have a space at that position (the "gutter"
+///    approach). This handles tools like lsof that pre-calculate max column widths
+///    and use exactly 1 space between columns.
 fn find_column_starts(header: &str, data_lines: &[&str]) -> Vec<usize> {
     let bytes = header.as_bytes();
+
+    // Pass 1: find gaps of 2+ spaces in the header
     let mut starts = Vec::new();
+    let mut gap_starts = Vec::new();
     let mut i = 0;
-    // Skip leading spaces
     while i < bytes.len() && bytes[i] == b' ' {
         i += 1;
     }
     if i < bytes.len() {
         starts.push(i);
+        gap_starts.push(0);
     }
     while i < bytes.len() {
         if bytes[i] == b' ' {
@@ -199,6 +213,7 @@ fn find_column_starts(header: &str, data_lines: &[&str]) -> Vec<usize> {
             }
             if i - gap_start >= 2 && i < bytes.len() {
                 starts.push(i);
+                gap_starts.push(gap_start);
             }
         } else {
             i += 1;
@@ -206,24 +221,115 @@ fn find_column_starts(header: &str, data_lines: &[&str]) -> Vec<usize> {
     }
 
     if data_lines.is_empty() || starts.len() < 2 {
+        // Not enough columns from 2-space pass; try gutter approach directly
+        let header_words = count_header_words(header);
+        if header_words >= 2 && !data_lines.is_empty() {
+            let gutter = find_gutter_columns(header, data_lines);
+            if gutter.len() >= 2 {
+                return gutter;
+            }
+        }
         return starts;
     }
 
-    // Validate: for each start (except first), the char before it should be a space
-    // in 60%+ of data rows
+    // Validate 2-space columns: check that data rows have at least one space
+    // anywhere within the header's gap region.
     let threshold = (data_lines.len() as f64 * 0.6).ceil() as usize;
     let mut validated = vec![starts[0]];
-    for &start in &starts[1..] {
-        let check_pos = start - 1;
+    for idx in 1..starts.len() {
+        let gap_begin = gap_starts[idx];
+        let gap_end = starts[idx];
         let count = data_lines
             .iter()
-            .filter(|l| l.len() > check_pos && l.as_bytes()[check_pos] == b' ')
+            .filter(|l| {
+                let b = l.as_bytes();
+                (gap_begin..gap_end).any(|p| p < b.len() && b[p] == b' ')
+            })
             .count();
         if count >= threshold {
-            validated.push(start);
+            validated.push(starts[idx]);
         }
     }
+
+    // Pass 2: if we found fewer columns than header words, try the gutter approach
+    let header_words = count_header_words(header);
+    if validated.len() < header_words {
+        let gutter = find_gutter_columns(header, data_lines);
+        if gutter.len() > validated.len() {
+            return gutter;
+        }
+    }
+
     validated
+}
+
+/// Count whitespace-separated words in the header line.
+fn count_header_words(header: &str) -> usize {
+    header.split_whitespace().count()
+}
+
+/// Find column boundaries using the "gutter" approach: positions where ALL (or nearly
+/// all) lines have a space character. Column boundaries are gutter→non-gutter transitions.
+///
+/// This handles tools like lsof that pre-calculate max column widths and use exactly
+/// 1 space between columns, with a mix of left/right alignment.
+fn find_gutter_columns(header: &str, data_lines: &[&str]) -> Vec<usize> {
+    let header_len = header.len();
+    let all_lines: Vec<&[u8]> = std::iter::once(header.as_bytes())
+        .chain(data_lines.iter().map(|l| l.as_bytes()))
+        .collect();
+    if header_len == 0 {
+        return Vec::new();
+    }
+
+    let total = all_lines.len();
+    // Only search within the header's extent — positions beyond the header
+    // are in the last column's data and can't define column boundaries.
+    let mut is_gutter = vec![false; header_len];
+    for pos in 0..header_len {
+        let count = all_lines
+            .iter()
+            .filter(|l| pos >= l.len() || l[pos] == b' ')
+            .count();
+        is_gutter[pos] = count == total;
+    }
+
+    let col_starts = gutter_transitions(&is_gutter, header_len);
+
+    // If strict gutter finds enough columns, use it
+    let header_words = count_header_words(header);
+    if col_starts.len() >= header_words {
+        return col_starts;
+    }
+
+    // Relax to 90% threshold
+    if total >= 4 {
+        let threshold = (total as f64 * 0.9).ceil() as usize;
+        for pos in 0..header_len {
+            let count = all_lines
+                .iter()
+                .filter(|l| pos >= l.len() || l[pos] == b' ')
+                .count();
+            is_gutter[pos] = count >= threshold;
+        }
+        let relaxed = gutter_transitions(&is_gutter, header_len);
+        if relaxed.len() > col_starts.len() {
+            return relaxed;
+        }
+    }
+
+    col_starts
+}
+
+/// Find column starts from gutter→non-gutter transitions.
+fn gutter_transitions(is_gutter: &[bool], len: usize) -> Vec<usize> {
+    let mut starts = Vec::new();
+    for pos in 0..len {
+        if !is_gutter[pos] && (pos == 0 || is_gutter[pos - 1]) {
+            starts.push(pos);
+        }
+    }
+    starts
 }
 
 fn parse_whitespace(input: &str) -> Result<Table, String> {
@@ -293,6 +399,46 @@ mod tests {
         let t = parse(input, Format::Ascii).unwrap();
         assert_eq!(t.headers, vec!["NAME", "STATUS", "AGE"]);
         assert_eq!(t.rows[0], vec!["my-pod", "Running", "5d"]);
+    }
+
+    #[test]
+    fn ascii_right_aligned_columns() {
+        // Simulates lsof-style output with right-aligned numbers and spaces in last column
+        let input = "\
+COMMAND     PID  USER   FD    NAME
+Google     6984 kevin  cwd    /
+Google     6984 kevin  txt    /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+Google     6984 kevin  3      /Users/kevin/Library/Application Support/Google/data";
+        let t = parse(input, Format::Ascii).unwrap();
+        assert_eq!(t.headers, vec!["COMMAND", "PID", "USER", "FD", "NAME"]);
+        assert_eq!(t.rows[1][4], "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
+        assert_eq!(t.rows[2][4], "/Users/kevin/Library/Application Support/Google/data");
+    }
+
+    #[test]
+    fn ascii_lsof_one_space_gaps() {
+        // lsof uses exactly 1 space between columns with pre-calculated max widths.
+        // The gutter approach detects column boundaries via positions where ALL lines
+        // have a space character (gutter→non-gutter transitions).
+        //
+        // Columns: COMMAND(7,L) PID(5,R) USER(5,L) FD(3,R) TYPE(4,L) DEVICE(6,R) SIZE/OFF(8,R) NODE(4,R) NAME(last)
+        // Each column padded to its max width, 1 space separator between columns.
+        let input = "\
+COMMAND   PID USER   FD TYPE DEVICE SIZE/OFF NODE NAME
+Google   6984 kevin cwd DIR    1,18      640    2 /
+Google   6984 kevin txt REG    1,18   215040  123 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+node    18429 kevin 14u IPv4 0x1234      0t0  TCP *:8080 (LISTEN)";
+        let t = parse(input, Format::Ascii).unwrap();
+        assert_eq!(
+            t.headers,
+            vec!["COMMAND", "PID", "USER", "FD", "TYPE", "DEVICE", "SIZE/OFF", "NODE", "NAME"]
+        );
+        assert_eq!(t.rows[0][8], "/");
+        assert_eq!(
+            t.rows[1][8],
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        );
+        assert_eq!(t.rows[2][8], "*:8080 (LISTEN)");
     }
 
     #[test]

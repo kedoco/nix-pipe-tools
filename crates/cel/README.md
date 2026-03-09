@@ -71,10 +71,20 @@ Auto-detection examines the first 64 lines and applies this priority:
 
 1. Markdown (pipe-delimited with separator row)
 2. Box-drawing (Unicode box characters)
-3. ASCII-aligned (column-aligned with separator lines)
+3. ASCII-aligned (column-aligned with consistent gaps)
 4. TSV (tab-separated)
 5. CSV (comma-separated)
 6. Whitespace (runs of spaces)
+
+### ASCII-aligned column detection
+
+cel uses a two-pass algorithm to find column boundaries in aligned text:
+
+1. **Wide gaps** — find 2+ space gaps in the header, validate each against data rows (60% must have a space somewhere in the gap region). Handles most tools: `kubectl`, `ps`, `docker ps`.
+
+2. **Gutter detection** — if pass 1 finds fewer columns than header words, find positions where *all* lines have a space character ("gutters"), then detect gutter→non-gutter transitions as column boundaries. Handles tools like `lsof` that pre-calculate max column widths and use exactly 1 space between columns.
+
+This means `cel` works with both loosely-spaced output (`kubectl get pods`) and tightly-spaced output (`lsof`).
 
 Input and output format names match, so `cel` composes with itself:
 

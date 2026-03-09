@@ -17,7 +17,7 @@ impl Format {
             "ascii" | "table" => Ok(Format::Ascii),
             "tsv" => Ok(Format::Tsv),
             "csv" => Ok(Format::Csv),
-            "plain" => Ok(Format::Whitespace),
+            "plain" => Ok(Format::Ascii),
             _ => Err(format!("unknown format: {}", s)),
         }
     }
@@ -84,46 +84,61 @@ fn is_ascii_aligned(lines: &[&str]) -> bool {
         return false;
     }
     let header = lines[0];
-    // Find column start positions from header (positions where non-space starts after 2+ spaces)
-    let col_starts = find_column_starts(header);
-    if col_starts.len() < 2 {
-        return false;
-    }
-    // The gaps between columns: position just before each column start (except first)
-    // Check that data rows have spaces in the gap regions
     let data_lines = &lines[1..];
     if data_lines.is_empty() {
         return false;
     }
-    let threshold = (data_lines.len() as f64 * 0.6).ceil() as usize;
-    // For each column start (except 0), check the char just before it is a space
-    for &start in &col_starts[1..] {
-        if start == 0 {
-            continue;
+
+    // Try 2-space gap detection first
+    let (col_starts, gap_starts) = find_wide_column_starts(header);
+    if col_starts.len() >= 2 {
+        let threshold = (data_lines.len() as f64 * 0.6).ceil() as usize;
+        let mut valid = true;
+        for idx in 1..col_starts.len() {
+            let gap_begin = gap_starts[idx];
+            let gap_end = col_starts[idx];
+            let count = data_lines
+                .iter()
+                .filter(|l| {
+                    let b = l.as_bytes();
+                    (gap_begin..gap_end).any(|p| p < b.len() && b[p] == b' ')
+                })
+                .count();
+            if count < threshold {
+                valid = false;
+                break;
+            }
         }
-        let check_pos = start - 1;
-        let count = data_lines
-            .iter()
-            .filter(|l| l.len() > check_pos && l.as_bytes()[check_pos] == b' ')
-            .count();
-        if count < threshold {
-            return false;
+        if valid {
+            return true;
         }
     }
-    true
+
+    // Try gutter-based detection for 1-space separated columns (like lsof)
+    let header_words = header.split_whitespace().count();
+    if header_words >= 2 {
+        let gutter_cols = find_gutter_columns(header, data_lines);
+        if gutter_cols.len() >= 2 {
+            return true;
+        }
+    }
+
+    false
 }
 
-/// Find column start positions: position 0 + positions where non-space begins after 2+ spaces
-fn find_column_starts(line: &str) -> Vec<usize> {
+/// Find column start positions using 2+ space gaps in the header.
+/// Returns (col_starts, gap_starts) where gap_starts[i] is the start of the gap before col_starts[i].
+fn find_wide_column_starts(line: &str) -> (Vec<usize>, Vec<usize>) {
     let bytes = line.as_bytes();
     let mut starts = Vec::new();
+    let mut gap_starts = Vec::new();
     let mut i = 0;
-    // Skip leading spaces
     while i < bytes.len() && bytes[i] == b' ' {
         i += 1;
     }
     if i < bytes.len() {
         starts.push(i);
+        gap_starts.push(0);
     }
     while i < bytes.len() {
         if bytes[i] == b' ' {
@@ -133,12 +148,46 @@ fn find_column_starts(line: &str) -> Vec<usize> {
             }
             if i - gap_start >= 2 && i < bytes.len() {
                 starts.push(i);
+                gap_starts.push(gap_start);
             }
         } else {
             i += 1;
         }
     }
-    starts
+    (starts, gap_starts)
+}
+
+/// Find column boundaries using the gutter approach: positions where all (or nearly all)
+/// lines have a space character. Column boundaries are gutter→non-gutter transitions.
+fn find_gutter_columns(header: &str, data_lines: &[&str]) -> Vec<usize> {
+    let header_len = header.len();
+    let all_lines: Vec<&[u8]> = std::iter::once(header.as_bytes())
+        .chain(data_lines.iter().map(|l| l.as_bytes()))
+        .collect();
+    if header_len == 0 {
+        return Vec::new();
+    }
+
+    let total = all_lines.len();
+    let threshold = (total as f64 * 0.9).ceil() as usize;
+    let mut is_gutter = vec![false; header_len];
+    for pos in 0..header_len {
+        let count = all_lines
+            .iter()
+            .filter(|l| pos >= l.len() || l[pos] == b' ')
+            .count();
+        is_gutter[pos] = count >= threshold;
+    }
+
+    // Find gutter→non-gutter transitions
+    let mut col_starts = Vec::new();
+    for pos in 0..header_len {
+        if !is_gutter[pos] && (pos == 0 || is_gutter[pos - 1]) {
+            col_starts.push(pos);
+        }
+    }
+
+    col_starts
 }
 
 fn is_tsv(lines: &[&str]) -> bool {
@@ -201,6 +250,17 @@ mod tests {
             "NAME          STATUS    AGE",
             "my-pod        Running   5d",
             "other-pod     Pending   1d",
+        ];
+        assert_eq!(detect(&lines), Format::Ascii);
+    }
+
+    #[test]
+    fn detect_ascii_one_space_gaps() {
+        // lsof-style: 1-space separators with pre-calculated max column widths
+        let lines = vec![
+            "COMMAND   PID USER   FD TYPE DEVICE SIZE/OFF NODE NAME",
+            "Google   6984 kevin cwd DIR    1,18      640    2 /",
+            "node    18429 kevin 14u IPv4 0x1234      0t0  TCP *:8080",
         ];
         assert_eq!(detect(&lines), Format::Ascii);
     }
