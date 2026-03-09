@@ -18,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
+      - run: rustup component add clippy
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build --workspace
