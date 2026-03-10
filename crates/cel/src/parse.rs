@@ -251,16 +251,89 @@ fn find_column_starts(header: &str, data_lines: &[&str]) -> Vec<usize> {
         }
     }
 
-    // Pass 2: if we found fewer columns than header words, try the gutter approach
+    // Pass 2: if we found fewer columns than header words, try the gutter approach.
+    // Only switch to gutter if every validated 2-space column start appears in the
+    // gutter results (±1 position). This prevents the gutter approach from producing
+    // wildly different (and wrong) column boundaries for tools like `ps aux` where
+    // ragged data alignment creates false gutters.
     let header_words = count_header_words(header);
     if validated.len() < header_words {
         let gutter = find_gutter_columns(header, data_lines);
         if gutter.len() > validated.len() {
-            return gutter;
+            let consistent = validated
+                .iter()
+                .all(|&v| gutter.iter().any(|&g| v.abs_diff(g) <= 2));
+            if consistent {
+                return gutter;
+            }
         }
     }
 
+    // Pass 3: try to split multi-word columns at 1-space header gaps where
+    // data alignment confirms the boundary (≥90% of data rows have a space).
+    if !data_lines.is_empty() {
+        refine_multiword_columns(header, data_lines, &mut validated);
+    }
+
     validated
+}
+
+/// For each validated column whose header contains multiple words, check if
+/// 1-space gaps in the header are confirmed by data alignment and split there.
+fn refine_multiword_columns(header: &str, data_lines: &[&str], starts: &mut Vec<usize>) {
+    let bytes = header.as_bytes();
+    let threshold = (data_lines.len() as f64 * 0.9).ceil() as usize;
+    let mut i = 0;
+    while i < starts.len() {
+        let col_start = starts[i];
+        let col_end = if i + 1 < starts.len() {
+            starts[i + 1]
+        } else {
+            header.len()
+        };
+        let col_header = &header[col_start..col_end.min(header.len())];
+        if col_header.split_whitespace().count() < 2 {
+            i += 1;
+            continue;
+        }
+
+        // Walk header within this column, find 1-space gaps confirmed by data
+        let mut new_splits = Vec::new();
+        let mut j = col_start;
+        while j < col_end {
+            if bytes[j] == b' ' {
+                let gap_start = j;
+                while j < col_end && bytes[j] == b' ' {
+                    j += 1;
+                }
+                if j < col_end {
+                    // Check if data rows have a space at the gap start position
+                    let count = data_lines
+                        .iter()
+                        .filter(|l| {
+                            let b = l.as_bytes();
+                            gap_start < b.len() && b[gap_start] == b' '
+                        })
+                        .count();
+                    if count >= threshold {
+                        new_splits.push(j);
+                    }
+                }
+            } else {
+                j += 1;
+            }
+        }
+
+        if !new_splits.is_empty() {
+            let insert_at = i + 1;
+            for (k, &s) in new_splits.iter().enumerate() {
+                starts.insert(insert_at + k, s);
+            }
+            i += new_splits.len() + 1;
+        } else {
+            i += 1;
+        }
+    }
 }
 
 /// Count whitespace-separated words in the header line.
@@ -439,6 +512,26 @@ node    18429 kevin 14u IPv4 0x1234      0t0  TCP *:8080 (LISTEN)";
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
         );
         assert_eq!(t.rows[2][8], "*:8080 (LISTEN)");
+    }
+
+    #[test]
+    fn ascii_ps_aux() {
+        // ps aux has a mix of 2-space and 1-space gaps in the header.
+        // The 2-space pass finds most columns, the refinement pass splits
+        // multi-word columns where data alignment confirms the boundary.
+        // TIME COMMAND stays merged since TIME values have varying widths.
+        let input = "\
+USER               PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
+root             21999  25.0  0.1 435382832  25296   ??  Ss    2:00PM   0:33.12 /System/Library/CoreServices/screensharingd
+kevin            45176  19.8  1.5 436343648 377408   ??  S    28Feb26 402:51.55 /Applications/iTerm.app/Contents/MacOS/iTerm2
+_windowserver      464  19.1  0.4 436482336  95136   ??  Ss   17Feb26 6701:25.13 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer";
+        let t = parse(input, Format::Ascii).unwrap();
+        assert_eq!(
+            t.headers,
+            vec!["USER", "PID", "%CPU", "%MEM", "VSZ", "RSS", "TT", "STAT", "STARTED", "TIME COMMAND"]
+        );
+        // Verify no fragment headers exist (the bug that prompted this fix)
+        assert!(!t.headers.iter().any(|h| h == "%" || h == "TAT" || h == "TARTED"));
     }
 
     #[test]
